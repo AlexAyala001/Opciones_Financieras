@@ -1,0 +1,281 @@
+---
+title: "Opciones Financieras"
+date: "12/11/2021"
+output:
+  rmdformats::downcute:
+      highlight: "tango"
+      lightbox: TRUE
+      self_contained: TRUE
+      code_folding: hide
+      gallery: TRUE
+      fig_width: 10
+      fig_height: 4
+      df_print: kable
+      toc_float:
+        collapsed: TRUE
+        smooth_scroll: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options("getSymbols.warning4.0"=FALSE)
+library(UsingR)
+library(matrixStats)
+library(quantmod)
+library(knitr)
+```
+
+## Opciones Financieras
+
+Las opciones financieras son instrumentos financieros que otorgan al **comprador el derecho** y al **vendedor la obligación** de realizar la transacción a un precio fijado y en una fecha determinada. Es ampliamente utilizada por los brokers para obtener cobertura de sus inversiones.
+
+**Existen 2 tipos:**
+
+**opción call**: es el derecho a comprar un activo subyacente a un precio determinado en un momento definido en el futuro.
+
+**opción put**: es el derecho a vender un activo subyacente a un precio determinado en un momento definido en el futuro.
+
+## Opciones exóticas
+
+Las opciones exóticas pueden definirse como aquellas cuya estructura de resultados es diferente a la de las opciones tradicionales, y que han surgido con la **intención de abaratar el coste de las primas** o para ajustarse más adecuadamente a determinadas situaciones. Es decir, se trata de opciones cuyas características, ya sea la determinación del precio de ejercicio (o del subyacente, la prima, las condiciones de pago, entre otros) difieren de las opciones clásicas.
+
+
+**Valución de opciones**
+
+Para la valuación de una opcion se definen las siguientes 2 formulas:
+
+Para una opción call se tiene $payoff= \max(S_t - K,0)$.
+
+Para una opción put se tiene $payoff= \max(K-S_t,0)$.
+
+$S_t$ es el precio simulado despues de t periodos.
+
+$K$ es el precio strike o precio del ejercicio.
+
+Para la valuacion de opciones existen diversos metodos, por lo que nos enfocaremos en el Método de árboles binomiales para modelar el precio de un bien subyacente y Método por simulacion de Montecarlo 
+
+
+Para llevar a cabo nuestro ejemplo usaremos los valores ajustados de la Acción de **Apple ** en un periodo de tiempo de 1 año (01/08/2020 al 01/08/2021)
+
+```{r, echo=FALSE,fig.align="center"}
+Acciones <- c("AAPL")
+getSymbols(Acciones,from='2020-08-01',to='2021-08-01')
+AdjClose <- Ad(AAPL)
+
+rendAAPL <- dailyReturn(Ad(AAPL), subset=NULL, type='arithmetic')
+rendAAPL<-rendAAPL[-1,1];colnames(rendAAPL)<-c("rendAAPL")
+#kable(round(rendAAPL[1:10,1],3))
+plot(rendAAPL,type="l",ylab="",main = "Rendimientos AAPL")
+```
+
+
+## Método de Árboles Binomiales 
+
+```{r, echo=FALSE,fig.align="center"}
+r <- mean(rendAAPL)
+Volatilidad <- sd(rendAAPL)
+S0 <-AdjClose[nrow(AdjClose)]; S0<-as.numeric(S0)
+K <- S0
+t <- 100
+u <- 1+mean(rendAAPL[rendAAPL>0])
+d <- 1+mean(rendAAPL[rendAAPL<0])
+p <- (((1+r) - d)/(u-d)); q <- 1-p
+
+```
+Los parametros usados son:
+
+$S_0 = 145.4295$ ultimo precio dentro del periodo 
+
+$K = 145.4295$ Precio strike
+
+$u = 1.01607$ Factor de incremento
+
+$d = 0.98526$ Factor de decremento
+
+$r = 0.001404$ Promedio de los rendimientos
+
+$t = 100$ Periodo
+
+$p = 0.524$ Probabilidad de alza
+
+$q = 0.476$ Probabilidad de baja
+
+***La primera parte es simular los precios y posteriormente optener el payoff correspondiente.***
+
+```{r, echo=FALSE,fig.align="center"}
+St <- matrix(0,nrow = (t+1),ncol=1)  
+Call <-numeric(t+1)
+Put <-numeric(t+1)
+
+for (i in 0:t) {
+    St[i+1,1]<- ((u)^(t-i))*((d)^i) *S0
+    Put[i+1] <- max(K-St[i+1,1],0)
+    Call[i+1] <- max(St[i+1,1]-K,0)
+}
+tiempo<-seq(0,t,1)
+#plot(tiempo,St,type="l",ylab="",main = "Precios simulados")
+Put1<-Put[(t+1):1]
+y<-cbind(Call,Put1)
+kable(round(y[1:10,],3),align = 'c',col.names = c("Sim Call","Sim Put"))
+
+########
+#opciones exoticas: asiaticas
+K1<-mean(St)
+Call1 <-numeric(t+1)
+Put1 <-numeric(t+1)
+
+for (h in 0:t) {
+    Put1[h+1] <- max(K1-St[h+1,1],0)
+    Call1[h+1] <- max(St[h+1,1]-K1,0)
+}
+##########
+#opciones exoticas: lookback
+K2 <- max(St);K3<-min(St)
+Call2 <-numeric(t+1)
+Put2 <-numeric(t+1)
+
+for (g in 0:t) {
+    Put2[g+1] <- max(K2-St[g+1,1],0)
+    Call2[g+1] <- max(St[g+1,1]-K3,0)
+}
+
+```
+
+***Posteriormente se llevaran estos payoff a valor presente conciderando la probabilidad de alza y la probabilidad de baja.***
+
+```{r, echo=FALSE,fig.align="center"}
+while (length(Call)!=1) {
+X<-c()
+for (j in 1:length(Call)) {
+    X<-c(X,(p*Call[j]+q*Call[j+1])/(1+r))
+}
+Call <- X[-length(Call)]
+}
+
+while (length(Put)!=1) {
+    X<-c()
+    for (j in 1:length(Put)) {
+        X<-c(X,(p*Put[j]+q*Put[j+1])/(1+r))
+    }
+    Put <- X[-length(Put)]
+}
+y<-cbind(Call,Put)
+kable(round(y,3),align = 'c',col.names=c("Call europea","Put europea"))
+
+```
+
+## Método por simualción de montecarlo
+
+Para la simulación de precios d se hará uso del Movimiento Browniano geométrico , con la siguiente **EDE**.
+
+$$dS_t = \mu S_{t}d_t + \sigma S_{t} d_W$$
+
+A través del calulo de Ito se obtiene la siguiente solucion a la **EDE**
+
+$$ S_{t} = S_{0}*e^{\left(\mu-\frac{\sigma ^2}{2} \right) t + \sigma \varepsilon_t \sqrt{ t}} $$
+
+Los parametros usados son:
+
+$S_0 = 145.4295$ Ultimo precio dentro del periodo 
+
+$K = 145.4295$ Precio strike
+
+$r = 0.001404$ Promedio de los rendimientos
+
+$t = 100$ Periodo
+
+$n = 100000$ Número de simulaciones
+
+$Volatilidad = 0.02047$ Volatilidad
+
+***El primer paso es simular los precios, los cuales se presentan en el siguiente grafico:***
+```{r,echo=FALSE,fig.align="center"}
+r <- mean(rendAAPL)
+Volatilidad <- sd(rendAAPL)
+S0 <-AdjClose[nrow(AdjClose)];S0<-as.numeric(S0)
+K <- S0
+n <- 100000
+intervalo_T <- 100
+payoffcall <-numeric(n+1)
+payoffput <-numeric(n+1)
+Vpcall <-numeric(n+1)
+Vpput <-numeric(n+1)
+
+dt <- intervalo_T/n
+t <- seq(0,intervalo_T,by=dt)
+dWt <-c(0,sqrt(dt)*rnorm(n))
+Wt <- cumsum(dWt)
+St <- S0*exp((r-Volatilidad^2/2)*t+Volatilidad*Wt)
+plot(t,St,type="l",ylab="",main = "Precios simulados",col="darkred")
+for (i in 1:(n+1)) {
+    payoffcall[i] <- max(St[i]-K,0)
+    payoffput[i] <- max(K-St[i],0)
+    Vpcall[i]<-exp(-r*intervalo_T)*max(St[i]-K,0)
+    Vpput[i]<-exp(-r*intervalo_T)*max(K-St[i],0)
+}
+payoffput1<- payoffput[(n+1):1]
+y<-cbind(payoffcall,payoffput1)
+kable(round(y[1:10,],3),align = 'c')
+
+########
+#Opciones exoticas: asiaticas
+K1<-mean(St)
+payoffcall1 <-numeric(n+1)
+payoffput1 <-numeric(n+1)
+Vpcall1 <-numeric(n+1)
+Vpput1 <-numeric(n+1)
+for (i in 1:(n+1)) {
+    payoffcall1[i] <- max(St[i]-K1,0)
+    payoffput1[i] <- max(K1-St[i],0)
+    Vpcall1[i]<-exp(-r*intervalo_T)*max(St[i]-K1,0)
+    Vpput1[i]<-exp(-r*intervalo_T)*max(K1-St[i],0)
+}
+
+#Opciones exoticas: lookback
+K2<-max(St);K3<- min(St)
+payoffcall2 <-numeric(n+1)
+payoffput2 <-numeric(n+1)
+Vpcall2 <-numeric(n+1)
+Vpput2 <-numeric(n+1)
+for (i in 1:(n+1)) {
+    payoffcall2[i] <- max(St[i]-K3,0)
+    payoffput2[i] <- max(K2-St[i],0)
+    Vpcall2[i]<-exp(-r*intervalo_T)*max(St[i]-K3,0)
+    Vpput2[i]<-exp(-r*intervalo_T)*max(K2-St[i],0)
+}
+```
+***El segundo paso es obtener los valores presentes de los Payoff***
+
+Se usaran las siguientes formulas:
+
+$$Vp payoff call = e^{-r*t} \max(S_t - K,0)$$
+
+$$ Vp payoff put = e^{-r*t} \max(K-S_t,0)$$
+
+
+```{r, echo=FALSE,fig.align="center"}
+
+y<-cbind(Vpcall,Vpput)
+kable(round(y[1:10,],3),align = 'c')
+```
+
+***El utimo paso es obtener la valuación de las opciones***
+
+Esta valuación se obtiene mediante un promedio aritmético sobre los valores presentes para cada tipo de opción, es decir, para la opción call y put.
+```{r,echo=FALSE}
+Call <- mean(Vpcall)
+Put <- mean(Vpput)
+y<-cbind(Call,Put)
+kable(round(y,3),align = 'c',col.names=c("Call europea","Put europea"))
+######
+Call1 <- mean(Vpcall1)
+Put1 <- mean(Vpput1)
+y1<-cbind(Call1,Put1)
+kable(round(y1,3),align = 'c',col.names=c("Call asiatica","Put asiatica"))
+########
+Call2 <- mean(Vpcall2)
+Put2 <- mean(Vpput2)
+y2<-cbind(Call2,Put2)
+kable(round(y2,3),align = 'c',col.names=c("Call lookback","Put lookback"))
+
+```
